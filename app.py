@@ -7,15 +7,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 import time
 
-# --- KONFIGURACJA STRONY ---
-st.set_page_config(page_title="Monitor SP18 v5.2", page_icon="🏫", layout="centered")
+st.set_page_config(page_title="Monitor SP18 v5.3", page_icon="🏫", layout="centered")
 
-st.title("🏫 Monitor SP18 v5.2")
+st.title("🏫 Monitor SP18 v5.3")
 st.markdown("Automatyczne pobieranie i odczytywanie zmian")
 
-# --- INTERFEJS ---
 target_name = st.text_input("Wpisz nazwisko nauczyciela:", "Pielok-Opara")
-# Zmieniona nazwa przycisku sugerująca podwójne działanie
 check_now = st.button("🔍 POBIERZ DANE I CZYTAJ")
 
 def get_substitutions(name):
@@ -68,61 +65,53 @@ def get_substitutions(name):
         if driver:
             driver.quit()
 
-# --- LOGIKA WYŚWIETLANIA I AUTOMATYCZNEGO CZYTANIA ---
 if check_now:
-    with st.spinner('Pobieram dane i przygotowuję lektora...'):
+    with st.spinner('Pobieram dane...'):
         results = get_substitutions(target_name)
+        
+        # Zmienna, która zawsze zbierze tekst do przeczytania
+        full_speech_text = ""
         
         if isinstance(results, str):
             st.error(results)
+            full_speech_text = "Wystąpił błąd podczas łączenia ze stroną szkoły."
         elif results:
             st.warning(f"🔔 Znaleziono zmiany dla: **{target_name}**")
-            
-            full_speech_text = ""
             for p, i in results:
                 with st.expander(f"Lekcja {p}", expanded=True):
                     st.write(f"**Opis:** {i.replace('➔', ' ➡️ ')}")
                 
-                # Budowanie tekstu do czytania
+                # Budowanie tekstu do czytania (v5.3 logic)
                 line_for_speech = f"Lekcja {p} " + i.replace(":", " klasa ", 1).replace("➔", " zamiana na ")
                 full_speech_text += line_for_speech + ". "
-
-            if full_speech_text:
-                js_text = full_speech_text.replace('"', '').replace("'", "").replace("\n", " ")
-                
-                # Skrypt JavaScript, który odpala się SAMODZIELNIE po załadowaniu
-                tts_html = f"""
-                <script>
-                function startSpeaking() {{
-                    if ('speechSynthesis' in window) {{
-                        window.speechSynthesis.cancel(); 
-                        var msg = new SpeechSynthesisUtterance();
-                        msg.text = "{js_text}";
-                        msg.lang = 'pl-PL';
-                        msg.rate = 0.9;
-                        window.speechSynthesis.speak(msg);
-                    }}
-                }}
-                // Uruchomienie mowy od razu po wstrzyknięciu kodu do strony
-                setTimeout(startSpeaking, 500);
-                </script>
-                <div style="text-align: center; padding: 10px; background: #27AE60; color: white; border-radius: 10px;">
-                    📢 Lektor powinien zacząć czytać automatycznie...
-                </div>
-                """
-                st.components.v1.html(tts_html, height=100)
         else:
             st.success(f"✅ Brak zastępstw dla: **{target_name}**")
+            full_speech_text = f"Dla nazwiska {target_name} brak nowych zastępstw. Masz czyste niebo."
+
+        # JEDEN WSPÓLNY SKRYPT DLA KAŻDEJ SYTUACJI
+        if full_speech_text:
+            js_text = full_speech_text.replace('"', '').replace("'", "").replace("\n", " ")
             
-            # Opcjonalnie: niech powie, że brak zmian
-            no_changes_js = """
+            tts_html = f"""
             <script>
-            var msg = new SpeechSynthesisUtterance("Brak nowych zastępstw. Czyste niebo.");
-            msg.lang = 'pl-PL';
-            window.speechSynthesis.speak(msg);
+            function startSpeaking() {{
+                if ('speechSynthesis' in window) {{
+                    window.speechSynthesis.cancel(); 
+                    var msg = new SpeechSynthesisUtterance();
+                    msg.text = "{js_text}";
+                    msg.lang = 'pl-PL';
+                    msg.rate = 0.9;
+                    window.speechSynthesis.speak(msg);
+                }}
+            }}
+            // Próba odpalenia mowy
+            setTimeout(startSpeaking, 500);
             </script>
+            <div style="text-align: center; padding: 10px; background: #1b5e20; color: white; border-radius: 10px; margin-top: 15px; font-weight: bold;">
+                📢 Lektor odczytuje komunikat...
+            </div>
             """
-            st.components.v1.html(no_changes_js, height=0)
+            st.components.v1.html(tts_html, height=100)
 
 st.divider()
-st.caption("v5.2 Auto-Talk | Kliknij przycisk i poczekaj na głos.")
+st.caption(f"v5.3 Final Talker | Status: Gotowy | {time.strftime('%H:%M:%S')}")
