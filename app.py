@@ -1,63 +1,41 @@
-import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
-from bs4 import BeautifulSoup
-import time
-
-st.set_page_config(page_title="Monitor v5", page_icon="🏫")
-
-st.title("🏫 Monitor Zastępstw SP18 v5")
-st.write("Wersja mobilna (Android/iPhone/Chromebook)")
-
-name = st.text_input("Wpisz nazwisko:", "Pielok-Opara")
-start = st.button("Sprawdź teraz")
-
-if start:
-    with st.spinner('Łączenie ze stroną szkoły...'):
-        options = Options()
-        options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
+def get_substitutions(name):
+    url = "https://sp18.chorzow.pl/substitution/"
+    
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    # To ustawienie jest kluczowe dla Streamlit Cloud:
+    options.binary_location = "/usr/bin/chromium"
+    
+    try:
+        # Na serwerze podajemy ścieżkę do systemowego drivera
+        service = Service("/usr/bin/chromedriver")
+        driver = webdriver.Chrome(service=service, options=options)
+        driver.get(url)
         
-        try:
-            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-            driver.get("https://sp18.chorzow.pl/substitution/")
-            time.sleep(3)
-            
-            # Przejście do sekcji nauczycieli
-            btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Informacje dla nauczycieli')]")
-            driver.execute_script("arguments[0].click();", btn)
-            time.sleep(2)
-            
-            soup = BeautifulSoup(driver.page_source, 'html.parser')
-            sections = soup.find_all("div", class_="section print-nobreak")
-            
-            raw_entries = []
-            for sec in sections:
-                header = sec.find("div", class_="header")
-                if header and name.lower() in header.get_text().lower():
-                    rows = sec.find_all("div", class_="row")
-                    for r in rows:
-                        p = r.find("div", class_="period").get_text(strip=True)
-                        i = r.find("div", class_="info").get_text(strip=True)
-                        raw_entries.append((p, i))
-            
-            driver.quit()
-
-            if raw_entries:
-                # Sortowanie tak jak w v5
-                raw_entries.sort(key=lambda x: (int(''.join(filter(str.isdigit, x[0]))), 0 if "(" in x[0] else 1))
-                
-                st.error(f"⚠️ ZNALAZŁEM ZASTĘPSTWA DLA: {name}")
-                for p, i in raw_entries:
-                    # Wyświetlanie czytelne dla oka
-                    t = i.replace("➔", " ➡️ ")
-                    st.info(f"**Lekcja {p}** \n\n {t}")
-            else:
-                st.success("✅ Brak zastępstw dla Twojego nazwiska.")
-                
-        except Exception as e:
-            st.error(f"Błąd: {e}")
+        wait = WebDriverWait(driver, 15)
+        btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Informacje dla nauczycieli')]")))
+        driver.execute_script("arguments[0].click();", btn)
+        time.sleep(3)
+        
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        sections = soup.find_all("div", class_="section print-nobreak")
+        
+        raw_entries = []
+        for sec in sections:
+            header = sec.find("div", class_="header")
+            if header and name.lower() in header.get_text().lower():
+                rows = sec.find_all("div", class_="row")
+                for r in rows:
+                    p = r.find("div", class_="period")
+                    i = r.find("div", class_="info")
+                    if p and i:
+                        raw_entries.append((p.get_text(strip=True), i.get_text(strip=True)))
+        
+        driver.quit()
+        raw_entries.sort(key=lambda x: (int(''.join(filter(str.isdigit, x[0]))), 0 if "(" in x[0] else 1))
+        return raw_entries
+    except Exception as e:
+        return f"Błąd techniczny: {str(e)}"
