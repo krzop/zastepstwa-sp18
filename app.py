@@ -8,39 +8,50 @@ from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 import time
 
-# Ustawienia strony
-st.set_page_config(page_title="Monitor SP18 v5", page_icon="🏫")
+# --- KONFIGURACJA STRONY ---
+st.set_page_config(page_title="Monitor SP18 v5", page_icon="🏫", layout="centered")
 
 st.title("🏫 Monitor Zastępstw SP18 v5")
-st.write("Wersja mobilna (Android / iPhone / Chromebook)")
+st.markdown("Wersja mobilna dla **Android / iPhone / Chromebook**")
 
-# Interfejs
-target_name = st.text_input("Wpisz nazwisko:", "Pielok-Opara")
-check_now = st.button("SPRAWDŹ ZASTĘPSTWA")
+# --- INTERFEJS UŻYTKOWNIKA ---
+target_name = st.text_input("Wpisz nazwisko nauczyciela:", "Pielok-Opara")
+check_now = st.button("🔍 SPRAWDŹ ZASTĘPSTWA")
 
 def get_substitutions(name):
     url = "https://sp18.chorzow.pl/substitution/"
     
+    # Konfiguracja opcji Chrome pod serwer Linux (Streamlit Cloud)
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--window-size=1920,1080")
+    # Wyłączenie ładowania obrazków dla przyspieszenia działania
+    options.add_argument("--blink-settings=imagesEnabled=false")
     
-    # Na Streamlit Cloud nie podajemy ścieżek na sztywno, 
-    # system sam dobierze odpowiedni binarek z packages.txt
+    driver = None
     try:
+        # Inicjalizacja Drivera (Streamlit sam dopasuje wersję z packages.txt)
         driver = webdriver.Chrome(options=options)
+        driver.set_page_load_timeout(30)
+        
+        # Wejście na stronę
         driver.get(url)
         
         # Oczekiwanie na przycisk "Informacje dla nauczycieli"
-        wait = WebDriverWait(driver, 15)
-        btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Informacje dla nauczycieli')]")))
-        driver.execute_script("arguments[0].click();", btn)
-        
-        # Krótka pauza na przeładowanie tabeli
-        time.sleep(3)
-        
+        wait = WebDriverWait(driver, 20)
+        try:
+            btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Informacje dla nauczycieli')]")))
+            driver.execute_script("arguments[0].click();", btn)
+            # Czekamy chwilę na załadowanie dynamicznej tabeli
+            time.sleep(4)
+        except Exception as btn_err:
+            st.warning("Nie udało się kliknąć przycisku (może tabela już jest widoczna?). Kontynuuję...")
+
+        # Pobranie kodu strony i analiza BeautifulSoup
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         sections = soup.find_all("div", class_="section print-nobreak")
         
@@ -57,35 +68,43 @@ def get_substitutions(name):
                     if p and i:
                         raw_entries.append((p.get_text(strip=True), i.get_text(strip=True)))
         
-        driver.quit()
-        
-        # Logika sortowania v5 (Anulowane w nawiasach przed zwykłymi)
-        raw_entries.sort(key=lambda x: (
-            int(''.join(filter(str.isdigit, x[0]))), 
-            0 if "(" in x[0] else 1
-        ))
+        # Sortowanie według logiki v5: (3) przed 3
+        if raw_entries:
+            raw_entries.sort(key=lambda x: (
+                int(''.join(filter(str.isdigit, x[0]))), 
+                0 if "(" in x[0] else 1
+            ))
         
         return raw_entries
 
     except Exception as e:
-        return f"Błąd techniczny: {str(e)}"
+        return f"Błąd połączenia: {str(e)}"
+    finally:
+        if driver:
+            driver.quit()
 
+# --- LOGIKA WYŚWIETLANIA ---
 if check_now:
-    with st.spinner('Pobieram dane ze strony szkoły...'):
+    with st.spinner('Łączę się z serwerem SP18... Proszę czekać.'):
         results = get_substitutions(target_name)
         
         if isinstance(results, str):
             st.error(results)
-            st.info("💡 Jeśli widzisz błąd 'SessionNotCreated', upewnij się, że masz plik packages.txt na GitHubie.")
+            st.info("💡 Porada: Jeśli błąd się powtarza, spróbuj 'Reboot App' w menu Streamlit.")
         elif results:
-            st.warning(f"🔔 Znaleziono zmiany dla: {target_name}")
+            st.balloons() # Mały efekt sukcesu
+            st.warning(f"🔔 Znaleziono zmiany dla: **{target_name}**")
+            
             for p, i in results:
-                # Formatowanie wizualne dla telefonu
-                st.markdown(f"### Lekcja {p}")
-                display_text = i.replace("➔", " ➡️ ")
-                st.info(display_text)
+                # Formatowanie dla wersji mobilnej
+                with st.expander(f"Lekcja {p}", expanded=True):
+                    # Zamiana strzałki na czytelniejszą ikonę
+                    display_text = i.replace("➔", " ➡️ ")
+                    st.write(f"**Opis:** {display_text}")
         else:
-            st.success(f"✅ Brak zastępstw dla nazwiska {target_name} na liście.")
+            st.success(f"✅ Brak zastępstw dla: **{target_name}**")
 
+# --- STOPKA ---
 st.divider()
-st.caption("Silnik: Monitor v5 | Status: Gotowy do pracy")
+st.caption(f"Aktualny czas serwera: {time.strftime('%H:%M:%S')}")
+st.caption("Silnik: Monitor v5 (Stable) | SP18 Chorzów")
