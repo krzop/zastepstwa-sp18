@@ -8,18 +8,18 @@ from bs4 import BeautifulSoup
 import time
 
 # --- KONFIGURACJA STRONY ---
-st.set_page_config(page_title="Monitor SP18 v5.1", page_icon="🏫", layout="centered")
+st.set_page_config(page_title="Monitor SP18 v5.2", page_icon="🏫", layout="centered")
 
-st.title("🏫 Monitor Zastępstw SP18 v5.1")
-st.markdown("Wersja mobilna z **funkcją lektora**")
+st.title("🏫 Monitor SP18 v5.2")
+st.markdown("Automatyczne pobieranie i odczytywanie zmian")
 
-# --- INTERFEJS UŻYTKOWNIKA ---
+# --- INTERFEJS ---
 target_name = st.text_input("Wpisz nazwisko nauczyciela:", "Pielok-Opara")
-check_now = st.button("🔍 SPRAWDŹ ZASTĘPSTWA")
+# Zmieniona nazwa przycisku sugerująca podwójne działanie
+check_now = st.button("🔍 POBIERZ DANE I CZYTAJ")
 
 def get_substitutions(name):
     url = "https://sp18.chorzow.pl/substitution/"
-    
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
@@ -59,22 +59,18 @@ def get_substitutions(name):
                         raw_entries.append((p.get_text(strip=True), i.get_text(strip=True)))
         
         if raw_entries:
-            # Sortowanie v5: (3) przed 3
-            raw_entries.sort(key=lambda x: (
-                int(''.join(filter(str.isdigit, x[0]))), 
-                0 if "(" in x[0] else 1
-            ))
+            raw_entries.sort(key=lambda x: (int(''.join(filter(str.isdigit, x[0]))), 0 if "(" in x[0] else 1))
         
         return raw_entries
     except Exception as e:
-        return f"Błąd połączenia: {str(e)}"
+        return f"Błąd: {str(e)}"
     finally:
         if driver:
             driver.quit()
 
-# --- LOGIKA WYŚWIETLANIA I LEKTORA ---
+# --- LOGIKA WYŚWIETLANIA I AUTOMATYCZNEGO CZYTANIA ---
 if check_now:
-    with st.spinner('Pobieram dane...'):
+    with st.spinner('Pobieram dane i przygotowuję lektora...'):
         results = get_substitutions(target_name)
         
         if isinstance(results, str):
@@ -83,57 +79,50 @@ if check_now:
             st.warning(f"🔔 Znaleziono zmiany dla: **{target_name}**")
             
             full_speech_text = ""
-            
             for p, i in results:
-                # Wyświetlanie na ekranie
                 with st.expander(f"Lekcja {p}", expanded=True):
-                    display_text = i.replace("➔", " ➡️ ")
-                    st.write(f"**Opis:** {display_text}")
+                    st.write(f"**Opis:** {i.replace('➔', ' ➡️ ')}")
                 
-                # Przygotowanie tekstu dla lektora (Twoja logika z "klasa")
-                # Zamieniamy pierwszy dwukropek na słowo klasa w każdym wierszu
+                # Budowanie tekstu do czytania
                 line_for_speech = f"Lekcja {p} " + i.replace(":", " klasa ", 1).replace("➔", " zamiana na ")
                 full_speech_text += line_for_speech + ". "
 
-            # Przycisk głosowy (JavaScript)
             if full_speech_text:
-                # Czyszczenie tekstu pod JavaScript
                 js_text = full_speech_text.replace('"', '').replace("'", "").replace("\n", " ")
                 
+                # Skrypt JavaScript, który odpala się SAMODZIELNIE po załadowaniu
                 tts_html = f"""
                 <script>
-                function speakPlan() {{
+                function startSpeaking() {{
                     if ('speechSynthesis' in window) {{
-                        window.speechSynthesis.cancel(); // Zatrzymaj jeśli już coś mówi
+                        window.speechSynthesis.cancel(); 
                         var msg = new SpeechSynthesisUtterance();
                         msg.text = "{js_text}";
                         msg.lang = 'pl-PL';
                         msg.rate = 0.9;
                         window.speechSynthesis.speak(msg);
-                    }} else {{
-                        alert("Twoja przeglądarka nie obsługuje syntezatora mowy.");
                     }}
                 }}
+                // Uruchomienie mowy od razu po wstrzyknięciu kodu do strony
+                setTimeout(startSpeaking, 500);
                 </script>
-                <div style="text-align: center;">
-                    <button onclick="speakPlan()" style="
-                        width: 100%;
-                        background-color: #27AE60;
-                        color: white;
-                        padding: 20px;
-                        border: none;
-                        border-radius: 12px;
-                        font-size: 20px;
-                        font-weight: bold;
-                        cursor: pointer;
-                        margin-top: 15px;
-                        box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-                    ">🔊 PRZECZYTAJ PLAN NA GŁOS</button>
+                <div style="text-align: center; padding: 10px; background: #27AE60; color: white; border-radius: 10px;">
+                    📢 Lektor powinien zacząć czytać automatycznie...
                 </div>
                 """
-                st.components.v1.html(tts_html, height=120)
+                st.components.v1.html(tts_html, height=100)
         else:
             st.success(f"✅ Brak zastępstw dla: **{target_name}**")
+            
+            # Opcjonalnie: niech powie, że brak zmian
+            no_changes_js = """
+            <script>
+            var msg = new SpeechSynthesisUtterance("Brak nowych zastępstw. Czyste niebo.");
+            msg.lang = 'pl-PL';
+            window.speechSynthesis.speak(msg);
+            </script>
+            """
+            st.components.v1.html(no_changes_js, height=0)
 
 st.divider()
-st.caption(f"Aktualizacja: v5.1 Mobile | {time.strftime('%H:%M:%S')}")
+st.caption("v5.2 Auto-Talk | Kliknij przycisk i poczekaj na głos.")
